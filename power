@@ -1,0 +1,28 @@
+#!/usr/bin/bash
+
+help(){
+	echo "Usage: ./power on|off"
+}
+
+ON(){
+	echo "Priming"
+	python3 /home/k/rpi-rf/scripts/rpi-rf_send -g 3 -p 149 -t 1 -l 24 -r 25 3093930
+	echo "Sending signal"
+	python3 /home/k/rpi-rf/scripts/rpi-rf_send -g 3 -p 149 -t 1 -l 24 -r 25 3093930
+}
+OFF(){
+	echo "Priming"
+	python3 /home/k/rpi-rf/scripts/rpi-rf_send -g 3 -p 149 -t 1 -l 24 -r 50 3093922
+	echo "Sending signal"
+	python3 /home/k/rpi-rf/scripts/rpi-rf_send -g 3 -p 149 -t 1 -l 24 -r 50 3093922
+}
+
+if [ $# -eq 0 ]; then 
+	help
+fi
+
+case "$1" in
+	on)		ON ;;
+	off)	OFF ;;
+	*)		help ;;	
+esac

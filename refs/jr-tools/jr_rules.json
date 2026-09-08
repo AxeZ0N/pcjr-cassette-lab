@@ -1,0 +1,162 @@
+{
+  "version": 2,
+  "rules": [
+    {
+      "id": "entry",
+      "kind": "prefix",
+      "pattern": "0E1F5506",
+      "severity": "error",
+      "message": "bridge entry: expected push cs / pop ds / push bp / push es (0E 1F 55 06); found {prefix}"
+    },
+    {
+      "id": "retf-count",
+      "kind": "opcode-count",
+      "mnemonic": "retf",
+      "op": "eq",
+      "value": 1,
+      "severity": "error",
+      "message": "exactly one far RETF required; found {count}, expected 1. An early RETF skips the mandatory NMI restore"
+    },
+    {
+      "id": "epilogue",
+      "kind": "suffix",
+      "pattern": "075DCB",
+      "severity": "error",
+      "message": "bridge epilogue: expected pop es / pop bp / retf (07 5D CB); found {suffix}"
+    },
+    {
+      "id": "no-int21h",
+      "kind": "opcode-absent",
+      "mnemonic": "int",
+      "operand": "0x21",
+      "severity": "error",
+      "message": "INT 21h forbidden: DOS not assumed; found in decoded stream"
+    },
+    {
+      "id": "no-iret",
+      "kind": "opcode-absent",
+      "mnemonic": "iret",
+      "severity": "error",
+      "message": "IRET forbidden in the bridge: unverified (S1 v2). Handler shape uses a far-jump, never IRET"
+    },
+    {
+      "id": "no-speaker",
+      "kind": "opcode-absent",
+      "mnemonic": "out",
+      "operand": "0x61",
+      "severity": "error",
+      "message": "OUT 61h forbidden: PCjr sound is TI SN76496, not the PC speaker"
+    },
+    {
+      "id": "selfloc",
+      "kind": "selfloc",
+      "severity": "error",
+      "config": { "encodings": ["disp8", "disp16"] },
+      "message": "selfloc: lea bp,[bp+{found_disp}] yields result offset {found_r}; expected displacement {expected_disp} (R - entry = {expected_disp})"
+    },
+    {
+      "id": "budget",
+      "kind": "budget",
+      "severity": "error",
+      "message": "budget: size {found_size} exceeds ceiling {ceiling}"
+    },
+    {
+      "id": "latch-read",
+      "kind": "before",
+      "severity": "warn",
+      "config": {
+        "a": ["B000E643", "B040E643", "B080E643"],
+        "b": ["E440", "E441", "E442"]
+      },
+      "message": "bare counter read {b_hex} without a preceding latch command (mov al,00h/40h/80h then out 43h). Latch the counter before reading; 41h reads are a keyboard hazard only with NMI live"
+    },
+    {
+      "id": "nmi-mask",
+      "kind": "before",
+      "severity": "warn",
+      "config": {
+        "a": "B000E6A0",
+        "b": ["E462"]
+      },
+      "message": "in al,62h (E4 62) without preceding mov al,0 / out 0A0h,al (B0 00 E6 A0). Polling 62h with NMI live is unsafe"
+    },
+    {
+      "id": "nmi-restore",
+      "kind": "suffix",
+      "pattern": "E4A0B080E6A0075DCB",
+      "severity": "warn",
+      "config": {
+        "cond": ["E6A0", "E462"]
+      },
+      "message": "NMI restore missing: expected in al,0A0h / mov al,80h / out 0A0h,al / pop es / pop bp / retf (E4 A0 B0 80 E6 A0 07 5D CB) when A0h/62h is touched; found {suffix}"
+    },
+    {
+      "id": "handler-entry",
+      "kind": "prefix",
+      "pattern": "0E1F55",
+      "severity": "error",
+      "message": "nmi handler entry: expected push cs / pop ds / push bp (0E 1F 55); found {prefix}"
+    },
+    {
+      "id": "handler-epilogue",
+      "kind": "suffix",
+      "pattern": "5D5350CB",
+      "severity": "error",
+      "message": "nmi handler epilogue: expected pop bp / push bx / push ax / retf (5D 53 50 CB); found {suffix}"
+    },
+    {
+      "id": "iret-entry",
+      "kind": "prefix",
+      "pattern": "0E1F55",
+      "severity": "error",
+      "message": "iret handler entry: expected push cs / pop ds / push bp (0E 1F 55); found {prefix}"
+    },
+    {
+      "id": "iret-retf-count",
+      "kind": "opcode-count",
+      "mnemonic": "retf",
+      "op": "eq",
+      "value": 0,
+      "severity": "error",
+      "message": "iret handler must contain no far RETF; found {count}, expected 0. NMI handlers return via IRET"
+    },
+    {
+      "id": "iret-has-iret",
+      "kind": "opcode-count",
+      "mnemonic": "iret",
+      "op": "eq",
+      "value": 1,
+      "severity": "error",
+      "message": "iret handler must contain exactly one IRET; found {count}, expected 1"
+    },
+    {
+      "id": "iret-epilogue",
+      "kind": "suffix",
+      "pattern": "5DCF",
+      "severity": "error",
+      "message": "iret handler epilogue: expected pop bp / iret (5D CF); found {suffix}"
+    }
+  ],
+  "groups": {
+    "nmi": ["nmi-mask", "nmi-restore"]
+  },
+  "shapes": {
+    "bridge": {
+      "stage_presets": {
+        "0": [],
+        "1": ["entry", "retf-count", "epilogue", "no-int21h", "no-iret", "no-speaker"],
+        "2": ["entry", "retf-count", "epilogue", "no-int21h", "no-iret", "no-speaker", "selfloc"],
+        "3": ["entry", "retf-count", "epilogue", "no-int21h", "no-iret", "no-speaker", "selfloc", "budget"],
+        "4": ["entry", "retf-count", "epilogue", "no-int21h", "no-iret", "no-speaker", "selfloc", "budget", "latch-read"],
+        "5": ["entry", "retf-count", "epilogue", "no-int21h", "no-iret", "no-speaker", "selfloc", "budget", "latch-read", "nmi-mask", "nmi-restore"],
+        "6": ["entry", "retf-count", "epilogue", "no-int21h", "no-iret", "no-speaker", "selfloc", "budget", "latch-read", "nmi-mask", "nmi-restore"]
+      }
+    },
+    "handler": {
+      "rules": ["handler-entry", "retf-count", "handler-epilogue", "no-int21h", "no-iret", "no-speaker", "selfloc", "budget"]
+    },
+    "iret": {
+      "rules": ["iret-entry", "iret-retf-count", "iret-has-iret", "iret-epilogue", "no-int21h", "no-speaker", "selfloc", "budget"]
+    }
+  }
+}

@@ -1,0 +1,80 @@
+--- a/refs/pcjr_asm_debug.py
++++ b/refs/pcjr_asm_debug.py
+@@ -11,6 +11,8 @@ v5: handler-opcode coverage (iret, dec r16, push/pop r16, moffs A1/A3,
+ mov r16,r/m16 8B, mov r/m8,imm8 C6), length-safe decode, tolerant hex
+ input, and OOB-safe branch checks.
++v5.1: fail-fast decode (P1): unknown opcodes and unsupported group /N
++halt decode with a "; FAIL:" marker instead of falling back to db.
+ """
+ import json
+ import re
+@@ -190,8 +192,8 @@ def _need(data, off, n):
+ def decode(data):
+     """byte list -> [(offset, length, text)] for the verified subset.
+ 
+-    Unknown opcodes fall back to a 1-byte `db` so the stream stays
+-    aligned. Truncated trailing instructions are marked, never raised.
++    Fail-fast (v5.1): the first unknown opcode halts decode; the
++    remaining bytes are one entry with a "; FAIL:" marker. Truncated
++    trailing instructions are marked, never raised.
+     """
+     out, off, n = [], 0, len(data)
+     while off < n:
+@@ -262,9 +264,11 @@ def decode(data):
+         elif b == 0x8D or b in MNEMO or b in (0x88, 0x3A, 0x80, 0x8B, 0xC6,
+                                                0x2B, 0x8A):
+             off, text = _modrm(data, off)
+         else:
+-            text = f"db 0x{b:02X} ; outside verified subset"
+-            off += 1
++            rest = "".join(f"{x:02X}" for x in data[start:])
++            off = n
++            text = (f"; FAIL: unknown opcode 0x{b:02X} at 0x{start:04X}, "
++                    f"decode halted (remaining {rest})")
+         out.append((start, off - start, text))
+     return out
+ 
+@@ -327,8 +331,9 @@ def _modrm(data, off):
+         if reg == 7:
+             return p, f"cmp {rm_oper(True)},0x{imm:02X}"
+-        # Unsupported group /N: consume imm8 so the stream stays aligned.
+-        return p, f"db 0x80 ; group /{reg} unsupported"
++        # Unsupported group /N: fail the gate.
++        return len(data), (f"; FAIL: 0x80 group /{reg} unsupported at "
++                           f"0x{off:04X}, decode halted")
+     if opcode == 0xC6:
+         if not _need(data, p, 1):
+             return off + 1, "db 0xC6 ; truncated (need imm8)"
+@@ -336,9 +341,11 @@ def _modrm(data, off):
+         p += 1
+         if reg == 0:
+             return p, f"mov {rm_oper(True)},0x{imm:02X}"
+-        # Unsupported group /N: consume imm8 so the stream stays aligned.
+-        return p, f"db 0xC6 ; group /{reg} unsupported"
+-    return p, f"db 0x{opcode:02X} ; outside verified subset"
++        # Unsupported group /N: fail the gate.
++        return len(data), (f"; FAIL: 0xC6 group /{reg} unsupported at "
++                           f"0x{off:04X}, decode halted")
++    return len(data), (f"; FAIL: unknown ModRM opcode 0x{opcode:02X} at "
++                       f"0x{off:04X}, decode halted")
+ 
+ def branch_checks(data, checks):
+     """Verify (insn_addr, target) pairs against decoded displacements."""
+@@ -464,6 +471,17 @@ def selftest():
+         "decode_s4_group": [t for _, _, t in decode(
+             [0x2B, 0xC8, 0x72, 0xFE, 0x8A, 0xE0, 0x80, 0xFC, 0x03])] ==
+             ["sub cx,ax", "jc 0x0002", "mov ah,al", "cmp ah,0x03"],
++        # v5.1 P1 fail-fast decode
++        "decode_unknown_halts": (
++            len(decode([0x00])) == 1
++            and "FAIL" in decode([0x00])[0][2]),
++        "decode_81_halts": (
++            len(decode([0x81, 0xBE, 0x7A, 0x00, 0xDC, 0x00])) == 1
++            and "FAIL" in decode([0x81, 0xBE, 0x7A, 0x00, 0xDC, 0x00])[0][2]),
++        "decode_80_group_unsupported_halts": (
++            "FAIL" in decode([0x80, 0xC1, 0x07])[0][2]),
++        "decode_c6_group_unsupported_halts": (
++            "FAIL" in decode([0xC6, 0xC9, 0x07])[0][2]),
+     }
+ 
+ def _hex_or_error(txt):

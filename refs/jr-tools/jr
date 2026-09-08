@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Thin CLI wrapper – imports the refactored API from jr.py."""
+from jr import main
+
+if __name__ == "__main__":
+    main()
